@@ -18,7 +18,7 @@ var bleCtx context.Context
 
 // BLEConnector is the interface that a BLE ClientAdaptor must implement
 type BLEConnector interface {
-	Connect() error
+	Connect(ctx context.Context) error
 	Reconnect() error
 	Disconnect() error
 	Finalize() error
@@ -28,7 +28,8 @@ type BLEConnector interface {
 	ReadCharacteristic(string) ([]byte, error)
 	WriteCharacteristic(string, []byte) error
 	Subscribe(string, func([]byte, error)) error
-	WithoutResponses(bool)
+	WithoutReponses(bool)
+	CheckUUID(uuid string) error
 }
 
 // ClientAdaptor represents a Client Connection to a BLE Peripheral
@@ -39,7 +40,7 @@ type ClientAdaptor struct {
 
 	addr    blelib.Addr
 	device  *blelib.Device
-	client  blelib.Client
+	Client  blelib.Client
 	profile *blelib.Profile
 
 	connected        bool
@@ -72,7 +73,7 @@ func (b *ClientAdaptor) Address() string { return b.address }
 func (b *ClientAdaptor) WithoutResponses(use bool) { b.withoutResponses = use }
 
 // Connect initiates a connection to the BLE peripheral. Returns true on successful connection.
-func (b *ClientAdaptor) Connect() (err error) {
+func (b *ClientAdaptor) Connect(ctx context.Context) (err error) {
 	bleMutex.Lock()
 	defer bleMutex.Unlock()
 
@@ -83,17 +84,16 @@ func (b *ClientAdaptor) Connect() (err error) {
 
 	var cln blelib.Client
 
-	cln, err = blelib.Connect(context.Background(), filter(b.Address()))
+	cln, err = blelib.Connect(ctx, filter(b.Address()))
 	if err != nil {
 		return errors.Wrap(err, "can't connect to peripheral "+b.Address())
 	}
-
 	b.addr = cln.Addr()
 	b.address = cln.Addr().String()
 	b.SetName(cln.Name())
-	b.client = cln
+	b.Client = cln
 
-	p, err := b.client.DiscoverProfile(true)
+	p, err := b.Client.DiscoverProfile(true)
 	if err != nil {
 		return errors.Wrap(err, "can't discover profile")
 	}
@@ -110,12 +110,12 @@ func (b *ClientAdaptor) Reconnect() (err error) {
 	if b.connected {
 		b.Disconnect()
 	}
-	return b.Connect()
+	return b.Connect(context.Background())
 }
 
 // Disconnect terminates the connection to the BLE peripheral. Returns true on successful disconnect.
 func (b *ClientAdaptor) Disconnect() (err error) {
-	b.client.CancelConnection()
+	b.Client.CancelConnection()
 	return
 }
 
@@ -135,7 +135,7 @@ func (b *ClientAdaptor) ReadCharacteristic(cUUID string) (data []byte, err error
 	uuid, _ := blelib.Parse(cUUID)
 
 	if u := b.profile.Find(blelib.NewCharacteristic(uuid)); u != nil {
-		data, err = b.client.ReadCharacteristic(u.(*blelib.Characteristic))
+		data, err = b.Client.ReadCharacteristic(u.(*blelib.Characteristic))
 	}
 
 	return
@@ -152,7 +152,7 @@ func (b *ClientAdaptor) WriteCharacteristic(cUUID string, data []byte) (err erro
 	uuid, _ := blelib.Parse(cUUID)
 
 	if u := b.profile.Find(blelib.NewCharacteristic(uuid)); u != nil {
-		err = b.client.WriteCharacteristic(u.(*blelib.Characteristic), data, b.withoutResponses)
+		err = b.Client.WriteCharacteristic(u.(*blelib.Characteristic), data, b.withoutReponses)
 	}
 
 	return
@@ -170,7 +170,7 @@ func (b *ClientAdaptor) Subscribe(cUUID string, f func([]byte, error)) (err erro
 
 	if u := b.profile.Find(blelib.NewCharacteristic(uuid)); u != nil {
 		h := func(req []byte) { f(req, nil) }
-		err = b.client.Subscribe(u.(*blelib.Characteristic), false, h)
+		err = b.Client.Subscribe(u.(*blelib.Characteristic), false, h)
 		if err != nil {
 			return err
 		}
@@ -178,6 +178,25 @@ func (b *ClientAdaptor) Subscribe(cUUID string, f func([]byte, error)) (err erro
 	}
 
 	return
+}
+
+func (b *ClientAdaptor) CheckUUID(in string) error {
+	if !b.connected {
+		return errors.New("Cannot list characteristics until BLE device is connected")
+	}
+
+	uuid, err := blelib.Parse(in)
+	if err != nil {
+		return err
+	}
+	for _, service := range b.profile.Services {
+		for _, char := range service.Characteristics {
+			if char.UUID.Equal(uuid) {
+				return nil
+			}
+		}
+	}
+	return errors.New("UUID not found in profile")
 }
 
 // getBLEDevice is singleton for blelib HCI device connection
