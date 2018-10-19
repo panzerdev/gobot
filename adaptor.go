@@ -1,5 +1,7 @@
 package gobot
 
+import "context"
+
 // Adaptor is the interface that describes an adaptor in gobot
 type Adaptor interface {
 	// Name returns the label for the Adaptor
@@ -7,7 +9,7 @@ type Adaptor interface {
 	// SetName sets the label for the Adaptor
 	SetName(n string)
 	// Connect initiates the Adaptor
-	Connect() error
+	Connect(ctx context.Context) error
 	// Finalize terminates the Adaptor
 	Finalize() error
 }

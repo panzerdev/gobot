@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	multierror "github.com/hashicorp/go-multierror"
+	"context"
 )
 
 // JSONConnection is a JSON representation of a Connection.
@@ -51,7 +52,7 @@ func (c *Connections) Start() (err error) {
 
 		log.Println(info + "...")
 
-		if cerr := connection.Connect(); cerr != nil {
+		if cerr := connection.Connect(context.Background()); cerr != nil {
 			err = multierror.Append(err, cerr)
 		}
 	}

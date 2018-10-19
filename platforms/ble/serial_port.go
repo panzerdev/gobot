@@ -1,6 +1,9 @@
 package ble
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // SerialPort is a implementation of serial over Bluetooth LE
 // Inspired by https://github.com/monteslu/ble-serial by @monteslu
@@ -8,7 +11,7 @@ type SerialPort struct {
 	address string
 	rid     string
 	tid     string
-	client  *ClientAdaptor
+	client  BLEConnector
 
 	// buffer of responseData and mutex to protect it
 	responseData  []byte
@@ -24,7 +27,7 @@ func NewSerialPort(address string, rid string, tid string) *SerialPort {
 func (p *SerialPort) Open() (err error) {
 	p.client = NewClientAdaptor(p.address)
 
-	err = p.client.Connect()
+	err = p.client.Connect(context.Background())
 
 	// subscribe to response notifications
 	p.client.Subscribe(p.rid, func(data []byte, e error) {
@@ -35,7 +38,7 @@ func (p *SerialPort) Open() (err error) {
 	return
 }
 
-// Read reads bytes from BLE serial port connection
+// ReadProcess reads bytes from BLE serial port connection
 func (p *SerialPort) Read(b []byte) (n int, err error) {
 	if len(p.responseData) == 0 {
 		return
